@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
+import sys
+from contextlib import nullcontext
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-from matplotlib.animation import FFMpegWriter
 import numpy as np
 import pandas as pd
 
@@ -17,7 +18,49 @@ DEFAULT_CSV = REPO_DIR / "day-3-flight-2-logs-hovering-deep/20260618_074356_rfd_
 
 ARRAY_MAX = 14.9
 INPUT_BITS = 8
+OUTPUT_BITS = 8
 DOA_PREFIX = "doa"
+NONINTERACTIVE_BACKENDS = {"agg", "cairo", "pdf", "pgf", "ps", "svg", "template"}
+
+
+def configure_matplotlib_backend() -> None:
+    early_parser = argparse.ArgumentParser(add_help=False)
+    early_parser.add_argument("--live", action=argparse.BooleanOptionalAction, default=True)
+    early_parser.add_argument("--backend")
+    early_args, _ = early_parser.parse_known_args()
+
+    cache_dir = Path("/tmp") / f"matplotlib-{os.getuid()}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(cache_dir))
+
+    import matplotlib
+
+    requested_backend = early_args.backend
+    if requested_backend:
+        matplotlib.use(requested_backend, force=True)
+        return
+
+    if not early_args.live:
+        return
+    if os.environ.get("MPLBACKEND"):
+        return
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return
+    if matplotlib.get_backend().lower() not in NONINTERACTIVE_BACKENDS:
+        return
+
+    for backend in ("TkAgg", "QtAgg", "Qt5Agg"):
+        try:
+            matplotlib.use(backend, force=True)
+            return
+        except Exception:
+            continue
+
+
+configure_matplotlib_backend()
+
+import matplotlib.pyplot as plt
+from matplotlib.animation import FFMpegWriter
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
@@ -30,6 +73,10 @@ def unsigned_scale(maximum: float, bits: int) -> float:
 
 def quantize_unsigned(x: np.ndarray, scale: float, bits: int) -> np.ndarray:
     return np.rint(x / scale).clip(0, 2**bits - 1).astype(np.int64)
+
+
+def unsigned_bounds(bits: int) -> tuple[int, int]:
+    return 0, 2**bits - 1
 
 
 def read_scalar(path: Path, dtype=float):
@@ -85,6 +132,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--label-column", default="transmission", help="True label column.")
     parser.add_argument("--seconds-per-map", type=float, default=1.0)
     parser.add_argument("--fps", type=float, default=2.0)
+    parser.add_argument(
+        "--backend",
+        help="Matplotlib backend to use for live rendering, e.g. TkAgg or QtAgg.",
+    )
+    parser.add_argument(
+        "--live",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Show a live matplotlib preview while frames are rendered.",
+    )
+    parser.add_argument(
+        "--no-video",
+        action="store_true",
+        help="Only render the live preview and prediction CSV; do not write an MP4.",
+    )
     return parser
 
 
@@ -106,6 +168,8 @@ def main() -> None:
         raise ValueError("--seconds-per-map must be positive")
     if args.fps <= 0:
         raise ValueError("--fps must be positive")
+    if args.no_video and not args.live:
+        raise ValueError("--no-video requires live rendering; remove --no-live")
 
     weights = read_column(SCRIPT_DIR / "w1.csv")
     bias = read_scalar(SCRIPT_DIR / "b1.csv", int)
@@ -129,40 +193,7 @@ def main() -> None:
 
     x_real = df[doa_columns].to_numpy(dtype=float)
     sx = unsigned_scale(ARRAY_MAX, INPUT_BITS)
-    xq = quantize_unsigned(x_real, sx, INPUT_BITS)
-
-      
-    mac = xq @ weights
-    integer_accumulator = mac + bias
     ratio = alpha / float(2**beta)
-    integer_output = np.rint(integer_accumulator * ratio).astype(np.int64)
-    logits = integer_output.astype(float) * sy
-    output_activation_b = sigmoid(logits)
-    predicted_label = np.where(output_activation_b >= 0.5, "B", "A")
-
-    pred_df = pd.DataFrame(
-        {
-            "row": np.arange(len(df), dtype=int),
-            "true_label": df["true_label"],
-            "predicted_label": predicted_label,
-            "integer_mac": mac,
-            "integer_bias": bias,
-            "integer_accumulator": integer_accumulator,
-            "alpha": alpha,
-            "beta": beta,
-            "integer_output": integer_output,
-            "sy": sy,
-            "logit": logits,
-            "output_activation_B": output_activation_b,
-        }
-    )
-    for column in ("transmission_timestamp", "doa_timestamp"):
-        if column in df.columns:
-            pred_df[column] = df[column]
-    pred_df.to_csv(prediction_csv, index=False)
-
-    correct = int((pred_df["predicted_label"] == pred_df["true_label"]).sum())
-    total = len(pred_df)
 
     if "transmission_timestamp" in df.columns:
         df["message_time_s"] = parse_timestamp_offsets_seconds(df["transmission_timestamp"])
@@ -190,41 +221,111 @@ def main() -> None:
     true_text = figure.text(0.5, 0.095, "", ha="center", va="center", fontsize=28)
     meta_text = figure.text(0.5, 0.045, "", ha="center", va="center", fontsize=16, color="#444444")
 
-    writer = FFMpegWriter(
-        fps=args.fps,
-        metadata={"title": "Integer SLP DOA predictions"},
-        bitrate=1800,
-    )
+    backend = plt.get_backend().lower()
+    live_render = args.live and backend not in NONINTERACTIVE_BACKENDS
+    if args.live and not live_render:
+        raise RuntimeError(
+            f"Live preview needs an interactive matplotlib backend, but matplotlib is using "
+            f"{plt.get_backend()!r}. Install one of these and run again:\n"
+            "  sudo apt install python3-tk\n"
+            "  pip install PyQt6\n"
+            "Then run with --backend TkAgg or --backend QtAgg if matplotlib still defaults to Agg. "
+            "Use --no-live for MP4-only rendering."
+        )
+    if args.no_video and not live_render:
+        raise RuntimeError("Cannot use --no-video without an interactive matplotlib backend.")
+    if live_render:
+        print(f"Live preview using matplotlib backend: {plt.get_backend()}")
+        plt.ion()
+        if figure.canvas.manager is not None:
+            figure.canvas.manager.set_window_title("Integer SLP DOA live rendering")
+        plt.show(block=False)
 
-    print(f"Accuracy={correct}/{total} = {correct / total:.6f}")
-    print(f"Rendering {len(df)} maps ({total_frames} frames) to {output_path}")
-    with writer.saving(figure, str(output_path), dpi=150):
-        for frame_idx in range(total_frames):
-            row_idx = frame_idx // repeated_frames
-            values = np.r_[x_real[row_idx], x_real[row_idx, 0]]
-            line.set_data(angles, values)
+    writer = None
+    if not args.no_video:
+        writer = FFMpegWriter(
+            fps=args.fps,
+            metadata={"title": "Integer SLP DOA predictions"},
+            bitrate=1800,
+        )
 
-            true_label = pred_df.loc[row_idx, "true_label"]
-            pred_label = pred_df.loc[row_idx, "predicted_label"]
+    if writer is not None:
+        print(f"Rendering {len(df)} maps ({total_frames} frames) to {output_path}")
+    else:
+        print(f"Live rendering {len(df)} maps ({total_frames} frames); MP4 output disabled")
+    prediction_rows: list[dict[str, object]] = []
+    correct = 0
+    save_context = writer.saving(figure, str(output_path), dpi=150) if writer else nullcontext()
+    output_qmin, output_qmax = unsigned_bounds(OUTPUT_BITS)
+    with save_context:
+        for row_idx, row in df.iterrows():
+            row_values = x_real[row_idx]
+            xq = quantize_unsigned(row_values, sx, INPUT_BITS)
+            mac = int(xq @ weights)
+            integer_accumulator = mac + bias
+            scaled_output = integer_accumulator * ratio
+            integer_output = int(np.clip(round(scaled_output), output_qmin, output_qmax))
+            logit = scaled_output * sy
+            output_activation_b = float(sigmoid(np.array([logit]))[0])
+            pred_label = "B" if output_activation_b >= 0.5 else "A"
+            true_label = row["true_label"]
             is_correct = true_label == pred_label
+            correct += int(is_correct)
 
-            axis.set_title(f"DOA Polar Map\n{row_idx + 1} / {len(df)}", fontsize=14, pad=12)
-            pred_text.set_text(f"Predicted: {pred_label}")
-            pred_text.set_color("#1b7f3a" if is_correct else "#b8322a")
-            true_text.set_text(f"True: {true_label}")
+            prediction_row = {
+                "row": row_idx,
+                "true_label": true_label,
+                "predicted_label": pred_label,
+                "integer_mac": mac,
+                "integer_bias": bias,
+                "integer_accumulator": integer_accumulator,
+                "alpha": alpha,
+                "beta": beta,
+                "integer_output": integer_output,
+                "sy": sy,
+                "logit": logit,
+                "output_activation_B": output_activation_b,
+            }
+            for column in ("transmission_timestamp", "doa_timestamp"):
+                if column in df.columns:
+                    prediction_row[column] = row[column]
+            prediction_rows.append(prediction_row)
 
-            if pd.notna(df.loc[row_idx, "message_time_s"]):
-                time_text = f"t={df.loc[row_idx, 'message_time_s']:.1f}s"
+            values = np.r_[row_values, row_values[0]]
+            line.set_data(angles, values)
+            if pd.notna(row["message_time_s"]):
+                time_text = f"t={row['message_time_s']:.1f}s"
             else:
                 time_text = "t=n/a"
-            meta_text.set_text(
-                f"{time_text} | y_int={integer_output[row_idx]} | "
-                f"logit={logits[row_idx]:.4f} | sigmoid={output_activation_b[row_idx]:.4f}"
+
+            for _ in range(repeated_frames):
+                axis.set_title(f"DOA Polar Map\n{row_idx + 1} / {len(df)}", fontsize=14, pad=12)
+                pred_text.set_text(f"Predicted: {pred_label}")
+                pred_text.set_color("#1b7f3a" if is_correct else "#b8322a")
+                true_text.set_text(f"True: {true_label}")
+                meta_text.set_text(
+                    f"{time_text} | y_int={integer_output} | "
+                    f"logit={logit:.4f} | sigmoid={output_activation_b:.4f}"
+                )
+                if live_render:
+                    figure.canvas.draw_idle()
+                    figure.canvas.flush_events()
+                    plt.pause(max(1.0 / args.fps, 0.001))
+                if writer is not None:
+                    writer.grab_frame()
+
+            print(
+                f"row={row_idx} predicted={pred_label} true={true_label} "
+                f"y_int={integer_output} sigmoid={output_activation_b:.6f}"
             )
 
-            writer.grab_frame()
+    pred_df = pd.DataFrame(prediction_rows)
+    pred_df.to_csv(prediction_csv, index=False)
+    total = len(pred_df)
+    print(f"Accuracy={correct}/{total} = {correct / total:.6f}")
 
-    print(output_path)
+    if writer is not None:
+        print(output_path)
     print(prediction_csv)
 
 
