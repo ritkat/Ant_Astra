@@ -109,12 +109,19 @@ m0_n = 39451
 def signed_to_u8(values):
     return [int(x) & 0xff for x in values]
 
+def u8_to_signed(values):
+    return [int(x) - 256 if int(x) > 127 else int(x) for x in values]
+
 def forward_pass_astra(obs):
-    obs_quant = np.round(np.array(obs)*2**e0_n/m0_n)
+	# d
+    print("obs: ", obs)
+    obs_quant = np.round(np.array(obs)*(2**e0_n/m0_n))
     obs_quant = np.clip(obs_quant, -127, 127)
+    print("input: ", obs_quant)
     obs_quant = signed_to_u8(obs_quant)
-    print("obs_quant: ", obs_quant)
-    return astra.run_activation(obs_quant)                      
+    print("obs_quant: ", u8_to_signed(astra.run_activation(obs_quant)[2:]))
+    # exit()
+    return u8_to_signed(astra.run_activation(obs_quant)[2:])                      
 
 # def save_forward_pass(obs):
 #     obs_quant = torch.round(torch.tensor(obs)*2**e0_n/m0_n).to(torch.float32)
@@ -191,8 +198,10 @@ def forward_pass_astra(obs):
 #     np.savetxt(path_scales + "e3.csv", e3.cpu().numpy().reshape(1,),   delimiter=",")
 #     # exit()
 
-env = gym.make('Ant-v5')
-obs = env.reset()
+env = gym.make('Ant-v5', render_mode="human")
+obs = env.reset(seed=42)
+
+Sx3 = np.array([0.0245])
 
 import imageio
 action_space_high = env.action_space.high
@@ -213,9 +222,10 @@ for _ in range(10):
             action = forward_pass_astra(obs[0])*Sx3
         else:
             action = forward_pass_astra(obs)*Sx3
+        print(action)
         
         # action = torch.tanh(action) * torch.tensor(env.action_space.high)
-        action = action.cpu().numpy()
+        # action = action.cpu().numpy()
         # action[0], action[1], action[2] = 0, 0, 0
         
         action = np.clip(action, action_space_low, action_space_high)

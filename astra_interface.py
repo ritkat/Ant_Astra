@@ -315,8 +315,8 @@ class AstraInterface:
     def run_activation(
         self,
         data: list[int],
-        read_size: int = 60,
-        read_addr: int = 0,
+        read_size: int = 10,
+        read_addr: int = 232,
         write_addr: int = 0,
         timeout: float = 10.0,
     ) -> list[int]:
