@@ -126,9 +126,9 @@ def forward_pass_astra(obs):
 #     return obs_quant, a1, a2, a3, w1, w2, w3, b1, b2, b3, m0, m1, m2, m3, e0, e1, e2, e3
 
 # Open the zip and load policy.pth
-with zipfile.ZipFile(model_path, "r") as archive:
-    with archive.open("policy.pth", "r") as f:
-        state_dict = th.load(io.BytesIO(f.read()), map_location="cpu")
+# with zipfile.ZipFile(model_path, "r") as archive:
+#     with archive.open("policy.pth", "r") as f:
+#         state_dict = th.load(io.BytesIO(f.read()), map_location="cpu")
 
 # Sx = state_dict['mlp_extractor.policy_net.act1.act_scaling_factor']
 # print(Sx)
