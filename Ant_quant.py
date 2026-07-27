@@ -5,13 +5,11 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-import torch as th
+# import torch as th
 import torch.nn as nn
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
-from Quantization_utils.quant_modules import *
-from Quantization_utils.quant_utils import *
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.torch_layers import MlpExtractor
 from stable_baselines3.common.distributions import DiagGaussianDistribution

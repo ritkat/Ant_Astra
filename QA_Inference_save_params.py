@@ -1,21 +1,23 @@
 import numpy as np
 from Ant_quant import *
 env = gym.make('Ant-v5')
-import torch as th
+import torch 
 import zipfile
 import imageio
 import io
 import mujoco
+from decimal import Decimal, ROUND_HALF_UP
 from scipy.spatial.transform import Rotation as R
-from compression_utils import *
+# from compression_utils import *
 
 from astra_interface import AstraInterface
 import time
 
 RUN_CONTINUOUS = False
 
-astra = AstraInterface("COM3", 115200)
-astra.write_instcfg("instr_")
+# astra = AstraInterface("COM3", 115200)
+# astra.write_instcfg("instr_mem.bin")
+# astra.write_paramcfg("param_mem.bin")
 
 from Ant_quant import *
 # model = PPO.load("/home/ritwik/MuJoCo_Quant/logs_ant/best_model_fixscale_1/best_model", env=env)
@@ -30,166 +32,161 @@ cfg = {
 env = gym.make("Ant-v5")
 model_path = "/home/ritwik/MuJoCo_Quant/logs_ant_new/_fixscale_64_20250831_141022/Quant_ant_69.zip"
 
+# def forward_pass(obs):
+#     obs_quant = torch.round(torch.tensor(obs)*2**e0/m0).to(torch.float32)
+#     obs_quant = torch.clip(obs_quant, -127, 127)
+#     a1 = torch.round((torch.matmul(obs_quant,w1.T)+b1)*m1/2**e1)
+#     # a1 = torch.relu(a1)
+#     a1 = torch.clip(a1, 0, 255)
+#     a2 = torch.round((torch.matmul(a1,w2.T)+b2)*m2/2**e2)
+#     # a2 = torch.relu(a2)
+#     a2 = torch.clip(a2, 0, 255)
+#     a3 = torch.round((torch.matmul(a2,w3.T)+b3)*m3/2**e3)
+#     a3 = torch.clip(a3, -127, 127)
 
+#     return a3
 
-def forward_pass(obs):
-    obs_quant = torch.round(torch.tensor(obs)*2**e0/m0).to(torch.float32)
-    obs_quant = torch.clip(obs_quant, -127, 127)
-    a1 = torch.round((torch.matmul(obs_quant,w1.T)+b1)*m1/2**e1)
-    # a1 = torch.relu(a1)
-    a1 = torch.clip(a1, 0, 255)
-    a2 = torch.round((torch.matmul(a1,w2.T)+b2)*m2/2**e2)
-    # a2 = torch.relu(a2)
-    a2 = torch.clip(a2, 0, 255)
-    a3 = torch.round((torch.matmul(a2,w3.T)+b3)*m3/2**e3)
-    a3 = torch.clip(a3, -127, 127)
+# def batch_frexp_refactored(inputs):
+#     """
+#     Decompose the scaling factor into mantissa and twos exponent, ensuring:
+#     - Mantissa lies in [0, 2^16)
+#     - Exponent remains meaningful (adjusted to match the scaled mantissa)
 
-    return a3
+#     Parameters:
+#     ----------
+#     inputs: Tensor
+#         Scaling factor
+
+#     Returns:
+#     -------
+#     mantissa: Tensor
+#     exponent: Tensor
+#     """
+#     shape_of_input = inputs.size()
+
+#     # Flatten the input tensor to a 1D tensor
+#     inputs = inputs.view(-1)
+
+#     # Decompose into mantissa and exponent
+#     output_m, output_e = np.frexp(inputs.cpu().numpy())
+
+#     # Prepare adjusted mantissa and exponent lists
+#     tmp_m = []
+#     tmp_e = []
+
+#     # Define the bias to scale mantissa to [0, 2^16)
+#     scale_factor = 16  # 2^16
+
+#     for idx, (m, e) in enumerate(zip(output_m, output_e)):
+#         # Scale mantissa from [0.5, 1) to [0, 2^16)
+#         int_m_shifted = int(Decimal(m * (2 ** scale_factor)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+#         # Adjust the exponent to account for the scaling of the mantissa
+#         e -= scale_factor
+#         e= e*-1
+#         e = max(0, min(255, e))
+#         # Ensure mantissa and exponent are within valid bounds
+#         if int_m_shifted >= 2 ** 16:  # Cap mantissa at maximum (65535)
+#             int_m_shifted = 2 ** 16 - 1
+
+#         elif inputs[idx] >= 65535:
+#             int_m_shifted = 65535
+#             e = 0
+
+#         tmp_m.append(int_m_shifted)
+#         tmp_e.append(e)
+
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     # tensor = torch.tensor(0.).to(device)
+
+#     return torch.from_numpy(np.array(tmp_m)).to(device).view(shape_of_input), \
+#            torch.from_numpy(np.array(tmp_e)).to(device).view(shape_of_input)
+
+e0_n = 18
+m0_n = 39451
 
 def forward_pass_astra(obs):
-    obs_quant = torch.round(torch.tensor(obs)*2**e0/m0).to(torch.float32)
-    obs_quant = torch.clip(obs_quant, -127, 127)
+    obs_quant = np.round(np.array(obs)*2**e0_n/m0_n)
+    obs_quant = np.clip(obs_quant, -127, 127)
     return astra.run_activation(obs_quant.cpu().numpy())                      
 
-def save_forward_pass(obs):
-    obs_quant = torch.round(torch.tensor(obs)*2**e0/m0).to(torch.float32)
-    obs_quant = torch.clip(obs_quant, -127, 127)
-    a1 = torch.round((torch.matmul(obs_quant,w1.T)+b1)*m1/2**e1)
-    # a1 = torch.relu(a1)
-    a1 = torch.clip(a1, 0, 255)
-    a2 = torch.round((torch.matmul(a1,w2.T)+b2)*m2/2**e2)
-    # a2 = torch.relu(a2)
-    a2 = torch.clip(a2, 0, 255)
-    a3 = torch.round((torch.matmul(a2,w3.T)+b3)*m3/2**e3)
-    a3 = torch.clip(a3, -127, 127)
+# def save_forward_pass(obs):
+#     obs_quant = torch.round(torch.tensor(obs)*2**e0_n/m0_n).to(torch.float32)
+#     obs_quant = torch.clip(obs_quant, -127, 127)
+#     a1 = torch.round((torch.matmul(obs_quant,w1.T)+b1)*m1/2**e1)
+#     # a1 = torch.relu(a1)
+#     a1 = torch.clip(a1, 0, 255)
+#     a2 = torch.round((torch.matmul(a1,w2.T)+b2)*m2/2**e2)
+#     # a2 = torch.relu(a2)
+#     a2 = torch.clip(a2, 0, 255)
+#     a3 = torch.round((torch.matmul(a2,w3.T)+b3)*m3/2**e3)
+#     a3 = torch.clip(a3, -127, 127)
 
-    return obs_quant, a1, a2, a3, w1, w2, w3, b1, b2, b3, m0, m1, m2, m3, e0, e1, e2, e3
+#     return obs_quant, a1, a2, a3, w1, w2, w3, b1, b2, b3, m0, m1, m2, m3, e0, e1, e2, e3
 
-
-
-
-def batch_frexp_refactored(inputs):
-    """
-    Decompose the scaling factor into mantissa and twos exponent, ensuring:
-    - Mantissa lies in [0, 2^16)
-    - Exponent remains meaningful (adjusted to match the scaled mantissa)
-
-    Parameters:
-    ----------
-    inputs: Tensor
-        Scaling factor
-
-    Returns:
-    -------
-    mantissa: Tensor
-    exponent: Tensor
-    """
-    shape_of_input = inputs.size()
-
-    # Flatten the input tensor to a 1D tensor
-    inputs = inputs.view(-1)
-
-    # Decompose into mantissa and exponent
-    output_m, output_e = np.frexp(inputs.cpu().numpy())
-
-    # Prepare adjusted mantissa and exponent lists
-    tmp_m = []
-    tmp_e = []
-
-    # Define the bias to scale mantissa to [0, 2^16)
-    scale_factor = 16  # 2^16
-
-    for idx, (m, e) in enumerate(zip(output_m, output_e)):
-        # Scale mantissa from [0.5, 1) to [0, 2^16)
-        int_m_shifted = int(Decimal(m * (2 ** scale_factor)).quantize(Decimal('1'), rounding=decimal.ROUND_HALF_UP))
-
-        # Adjust the exponent to account for the scaling of the mantissa
-        e -= scale_factor
-        e= e*-1
-        e = max(0, min(255, e))
-        # Ensure mantissa and exponent are within valid bounds
-        if int_m_shifted >= 2 ** 16:  # Cap mantissa at maximum (65535)
-            int_m_shifted = 2 ** 16 - 1
-
-        elif inputs[idx] >= 65535:
-            int_m_shifted = 65535
-            e = 0
-
-        tmp_m.append(int_m_shifted)
-        tmp_e.append(e)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # tensor = torch.tensor(0.).to(device)
-
-    return torch.from_numpy(np.array(tmp_m)).to(device).view(shape_of_input), \
-           torch.from_numpy(np.array(tmp_e)).to(device).view(shape_of_input)
-
-
-# model_path = "/home/ritwik/MuJoCo_Quant/logs_ant_new/_fixscale_256_20250828_133853/Quant_ant_38.zip"
 # Open the zip and load policy.pth
 with zipfile.ZipFile(model_path, "r") as archive:
     with archive.open("policy.pth", "r") as f:
         state_dict = th.load(io.BytesIO(f.read()), map_location="cpu")
 
-Sx = state_dict['mlp_extractor.policy_net.act1.act_scaling_factor']
-print(Sx)
-Sw = state_dict['mlp_extractor.policy_net.fc1.fc_scaling_factor']
-Sx1 = state_dict['mlp_extractor.policy_net.act2.act_scaling_factor']
-Sw1 = state_dict['mlp_extractor.policy_net.fc2.fc_scaling_factor']
-# Sx2 = state_dict['mlp_extractor.policy_net.act3.act_scaling_factor']
-Sw2 = state_dict['action_net.fc1.fc_scaling_factor']
-Sx2 = state_dict['action_net.act1.act_scaling_factor']
-Sw3= state_dict['action_net.fc1.fc_scaling_factor'] 
-Sx3 = state_dict['action_net.act2.act_scaling_factor']
+# Sx = state_dict['mlp_extractor.policy_net.act1.act_scaling_factor']
+# print(Sx)
+# Sw = state_dict['mlp_extractor.policy_net.fc1.fc_scaling_factor']
+# Sx1 = state_dict['mlp_extractor.policy_net.act2.act_scaling_factor']
+# Sw1 = state_dict['mlp_extractor.policy_net.fc2.fc_scaling_factor']
+# # Sx2 = state_dict['mlp_extractor.policy_net.act3.act_scaling_factor']
+# Sw2 = state_dict['action_net.fc1.fc_scaling_factor']
+# Sx2 = state_dict['action_net.act1.act_scaling_factor']
+# Sw3= state_dict['action_net.fc1.fc_scaling_factor'] 
+# Sx3 = state_dict['action_net.act2.act_scaling_factor']
 
 
-m0, e0 = batch_frexp_refactored(Sx)
-m1, e1 = batch_frexp_refactored(Sw*Sx/Sx1)
-m2, e2 = batch_frexp_refactored(Sw1*Sx1/Sx2)
-m3, e3 = batch_frexp_refactored(Sx2*Sw2/Sx3)
+# m0, e0 = batch_frexp_refactored(Sx)
+# m1, e1 = batch_frexp_refactored(Sw*Sx/Sx1)
+# m2, e2 = batch_frexp_refactored(Sw1*Sx1/Sx2)
+# m3, e3 = batch_frexp_refactored(Sx2*Sw2/Sx3)
 
-w1 = state_dict['mlp_extractor.policy_net.fc1.weight_integer']
-b1 = state_dict['mlp_extractor.policy_net.fc1.bias_integer']
-w2 = state_dict['mlp_extractor.policy_net.fc2.weight_integer']
-b2 = state_dict['mlp_extractor.policy_net.fc2.bias_integer']
-w3 = state_dict['action_net.fc1.weight_integer']
-b3 = state_dict['action_net.fc1.bias_integer']
+# w1 = state_dict['mlp_extractor.policy_net.fc1.weight_integer']
+# b1 = state_dict['mlp_extractor.policy_net.fc1.bias_integer']
+# w2 = state_dict['mlp_extractor.policy_net.fc2.weight_integer']
+# b2 = state_dict['mlp_extractor.policy_net.fc2.bias_integer']
+# w3 = state_dict['action_net.fc1.weight_integer']
+# b3 = state_dict['action_net.fc1.bias_integer']
+
+
+# if save_wt_scales_activations:
+#     obs_quant, a1, a2, a3, w1, w2, w3, b1, b2, b3, m0, m1, m2, m3, e0, e1, e2, e3 = save_forward_pass(obs[0])
+#     # Save these tensors to a .csv file 
+#     path = f"_{NEURONS}_Quant_activations_weights/"
+#     path_scales = path + "Scales/"
+#     path_weights = path + "Weights/"
+#     path_activations = path + "Activations/"
+#     os.makedirs(path, exist_ok=True)
+#     os.makedirs(path_scales, exist_ok=True)
+#     os.makedirs(path_weights, exist_ok=True)
+#     os.makedirs(path_activations, exist_ok=True)
+#     np.savetxt(path_activations + "obs_quant.csv", obs_quant.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_activations + "a1.csv", a1.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_activations + "a2.csv", a2.cpu().numpy(), delimiter=",")        
+#     np.savetxt(path_activations + "a3.csv", a3.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_weights + "w1.csv", w1.T.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_weights + "w2.csv", w2.T.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_weights + "w3.csv", w3.T.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_weights + "b1.csv", b1.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_weights + "b2.csv", b2.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_weights + "b3.csv", b3.cpu().numpy(), delimiter=",")
+#     np.savetxt(path_scales + "m0.csv", m0.cpu().numpy().reshape(1,), delimiter=",")
+#     np.savetxt(path_scales + "m1.csv", m1.cpu().numpy().reshape(1,),   delimiter=",")
+#     np.savetxt(path_scales + "m2.csv", m2.cpu().numpy().reshape(1,),   delimiter=",")
+#     np.savetxt(path_scales + "m3.csv", m3.cpu().numpy().reshape(1,),   delimiter=",")
+#     np.savetxt(path_scales + "e0.csv", e0.cpu().numpy().reshape(1,),   delimiter=",")
+#     np.savetxt(path_scales + "e1.csv", e1.cpu().numpy().reshape(1,),   delimiter=",")
+#     np.savetxt(path_scales + "e2.csv", e2.cpu().numpy().reshape(1,),   delimiter=",")
+#     np.savetxt(path_scales + "e3.csv", e3.cpu().numpy().reshape(1,),   delimiter=",")
+#     # exit()
 
 env = gym.make('Ant-v5')
 obs = env.reset()
-if save_wt_scales_activations:
-    obs_quant, a1, a2, a3, w1, w2, w3, b1, b2, b3, m0, m1, m2, m3, e0, e1, e2, e3 = save_forward_pass(obs[0])
-    # Save these tensors to a .csv file 
-    path = f"_{NEURONS}_Quant_activations_weights/"
-    path_scales = path + "Scales/"
-    path_weights = path + "Weights/"
-    path_activations = path + "Activations/"
-    os.makedirs(path, exist_ok=True)
-    os.makedirs(path_scales, exist_ok=True)
-    os.makedirs(path_weights, exist_ok=True)
-    os.makedirs(path_activations, exist_ok=True)
-    np.savetxt(path_activations + "obs_quant.csv", obs_quant.cpu().numpy(), delimiter=",")
-    np.savetxt(path_activations + "a1.csv", a1.cpu().numpy(), delimiter=",")
-    np.savetxt(path_activations + "a2.csv", a2.cpu().numpy(), delimiter=",")        
-    np.savetxt(path_activations + "a3.csv", a3.cpu().numpy(), delimiter=",")
-    np.savetxt(path_weights + "w1.csv", w1.T.cpu().numpy(), delimiter=",")
-    np.savetxt(path_weights + "w2.csv", w2.T.cpu().numpy(), delimiter=",")
-    np.savetxt(path_weights + "w3.csv", w3.T.cpu().numpy(), delimiter=",")
-    np.savetxt(path_weights + "b1.csv", b1.cpu().numpy(), delimiter=",")
-    np.savetxt(path_weights + "b2.csv", b2.cpu().numpy(), delimiter=",")
-    np.savetxt(path_weights + "b3.csv", b3.cpu().numpy(), delimiter=",")
-    np.savetxt(path_scales + "m0.csv", m0.cpu().numpy().reshape(1,), delimiter=",")
-    np.savetxt(path_scales + "m1.csv", m1.cpu().numpy().reshape(1,),   delimiter=",")
-    np.savetxt(path_scales + "m2.csv", m2.cpu().numpy().reshape(1,),   delimiter=",")
-    np.savetxt(path_scales + "m3.csv", m3.cpu().numpy().reshape(1,),   delimiter=",")
-    np.savetxt(path_scales + "e0.csv", e0.cpu().numpy().reshape(1,),   delimiter=",")
-    np.savetxt(path_scales + "e1.csv", e1.cpu().numpy().reshape(1,),   delimiter=",")
-    np.savetxt(path_scales + "e2.csv", e2.cpu().numpy().reshape(1,),   delimiter=",")
-    np.savetxt(path_scales + "e3.csv", e3.cpu().numpy().reshape(1,),   delimiter=",")
-    # exit()
-
-env = gym.make('Ant-v5')
-# obs = env.reset()
 
 import imageio
 action_space_high = env.action_space.high
@@ -198,12 +195,7 @@ frames = []
 cd_list = []
 for _ in range(10):
     timestep=0
-    contact_counts = {f: 0 for f in ["front_left_foot","front_right_foot","back_left_foot","back_right_foot"]}
-    contacts_over_time = []
-    all_contact_logs = []
     obs = env.reset()
-    model = env.unwrapped.model
-    data = env.unwrapped.data
     total_reward= 0
     done = False
     while not done and timestep < 1000:
