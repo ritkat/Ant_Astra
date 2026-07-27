@@ -16,7 +16,7 @@ import time
 
 RUN_CONTINUOUS = False
 
-astra = AstraInterface("/dev/ttyUSB0", 115200)
+astra = AstraInterface("/dev/ttyACM0", 115200)
 astra.write_instcfg("instr_mem.bin")
 astra.write_paramcfg("param_mem.bin")
 
@@ -106,10 +106,15 @@ cfg = {
 e0_n = 18
 m0_n = 39451
 
+def signed_to_u8(values):
+    return [int(x) & 0xff for x in values]
+
 def forward_pass_astra(obs):
     obs_quant = np.round(np.array(obs)*2**e0_n/m0_n)
     obs_quant = np.clip(obs_quant, -127, 127)
-    return astra.run_activation(obs_quant.cpu().numpy())                      
+    obs_quant = signed_to_u8(obs_quant)
+    print("obs_quant: ", obs_quant)
+    return astra.run_activation(obs_quant)                      
 
 # def save_forward_pass(obs):
 #     obs_quant = torch.round(torch.tensor(obs)*2**e0_n/m0_n).to(torch.float32)
