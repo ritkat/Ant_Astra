@@ -30,8 +30,8 @@ cfg = {
     "quant_weights": True,
     "activation": "relu",
 }
-env = gym.make("Ant-v5")
-model_path = "/home/ritwik/MuJoCo_Quant/logs_ant_new/_fixscale_64_20250831_141022/Quant_ant_69.zip"
+# env = gym.make("Ant-v5")
+# model_path = "/home/ritwik/MuJoCo_Quant/logs_ant_new/_fixscale_64_20250831_141022/Quant_ant_69.zip"
 
 # def forward_pass(obs):
 #     obs_quant = torch.round(torch.tensor(obs)*2**e0/m0).to(torch.float32)
