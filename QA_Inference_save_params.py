@@ -1,7 +1,8 @@
 import numpy as np
-from Ant_quant import *
+import gymnasium as gym
+# from Ant_quant import *
 env = gym.make('Ant-v5')
-import torch 
+# import torch 
 import zipfile
 import imageio
 import io
@@ -19,7 +20,7 @@ RUN_CONTINUOUS = False
 # astra.write_instcfg("instr_mem.bin")
 # astra.write_paramcfg("param_mem.bin")
 
-from Ant_quant import *
+# from Ant_quant import *
 # model = PPO.load("/home/ritwik/MuJoCo_Quant/logs_ant/best_model_fixscale_1/best_model", env=env)
 
 save_wt_scales_activations = True
