@@ -16,9 +16,9 @@ import time
 
 RUN_CONTINUOUS = False
 
-# astra = AstraInterface("COM3", 115200)
-# astra.write_instcfg("instr_mem.bin")
-# astra.write_paramcfg("param_mem.bin")
+astra = AstraInterface("COM3", 115200)
+astra.write_instcfg("instr_mem.bin")
+astra.write_paramcfg("param_mem.bin")
 
 # from Ant_quant import *
 # model = PPO.load("/home/ritwik/MuJoCo_Quant/logs_ant/best_model_fixscale_1/best_model", env=env)
