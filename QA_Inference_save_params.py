@@ -9,6 +9,13 @@ import mujoco
 from scipy.spatial.transform import Rotation as R
 from compression_utils import *
 
+from astra_interface import AstraInterface
+import time
+
+RUN_CONTINUOUS = False
+
+astra = AstraInterface("COM3", 115200)
+astra.write_instcfg("instr_")
 
 from Ant_quant import *
 # model = PPO.load("/home/ritwik/MuJoCo_Quant/logs_ant/best_model_fixscale_1/best_model", env=env)
@@ -23,68 +30,6 @@ cfg = {
 env = gym.make("Ant-v5")
 model_path = "/home/ritwik/MuJoCo_Quant/logs_ant_new/_fixscale_64_20250831_141022/Quant_ant_69.zip"
 
-# Get geom IDs for the ant's feet
-model = env.unwrapped.model
-data = env.unwrapped.data
-# sim = env.unwrapped.sim
-
-foot_geom_names = ["aux_1_geom", "aux_2_geom", "aux_3_geom", "aux_4_geom"]
-foot_geom_ids = [model.geom(name).id for name in foot_geom_names]
-
-foot_geom_names = ["left_ankle_geom", "right_ankle_geom", "third_ankle_geom", "fourth_ankle_geom"]
-foot_geom_ids = [model.geom(name).id for name in foot_geom_names]
-
-def check_foot_contacts(data, foot_geom_ids, floor_id):
-    contacts = np.zeros(len(foot_geom_ids), dtype=int)
-    for i, fid in enumerate(foot_geom_ids):
-        for c in range(data.ncon):
-            contact = data.contact[c]
-            if ((contact.geom1 == fid and contact.geom2 == floor_id) or
-                (contact.geom2 == fid and contact.geom1 == floor_id)):
-                contacts[i] = 1
-                break
-    return contacts
-
-# floor ID
-floor_id = model.geom("floor").id
-
-def foot_contact_flags(env_model, env_data):
-    # qpos: [x, y, z, qw, qx, qy, qz, joint_angles...]
-    # The first 7 are torso pos+quat, after that are joint angles.
-    # To approximate contact, use foot height from site_xpos or body_xpos.
-    
-    # foot_geom_names = ["left_ankle_geom", "right_ankle_geom", "third_ankle_geom", "fourth_ankle_geom"]
-    # foot_geom_names = ["aux_1_geom", "aux_2_geom", "aux_3_geom", "aux_4_geom"]
-    # foot_geom_names = ["right_leg_geom", "left_leg_geom", "back_leg_geom", "rightback_leg_geom"]
-    # foot_geom_names = ["floor"]
-    foot_geom_names = ["left_ankle_geom", "left_leg_geom", "aux_1_geom", "aux_2_geom", "aux_3_geom", "aux_4_geom"]
-    # foot_geom_names = ["flfl"]
-    foot_geom_ids = [model.geom(name).id for name in foot_geom_names]
-    contacts = {}
-    for id in foot_geom_ids:
-        z = env_data.geom_xpos[id][2]  # z-coordinate of the foot geom
-        contacts[f] = (z < 0.08)  # threshold (tune depending on env scale)
-    return contacts
-
-def log_contacts(data, model, step):
-    """
-    Logs all contacts for the current timestep.
-    """
-    ncon = data.ncon
-    logs = []
-    for c in range(ncon):
-        contact = data.contact[c]
-        g1 = model.geom_id2name(contact.geom1)
-        g2 = model.geom_id2name(contact.geom2)
-        logs.append({
-            "step": step,
-            "geom1": g1,
-            "geom2": g2,
-            "pos": contact.pos.copy(),   # contact position (x, y, z)
-            "dist": contact.dist,        # distance (negative = penetration)
-            "frame": contact.frame.copy(),  # contact normal + tangent basis
-        })
-    return logs
 
 
 def forward_pass(obs):
@@ -100,6 +45,11 @@ def forward_pass(obs):
     a3 = torch.clip(a3, -127, 127)
 
     return a3
+
+def forward_pass_astra(obs):
+    obs_quant = torch.round(torch.tensor(obs)*2**e0/m0).to(torch.float32)
+    obs_quant = torch.clip(obs_quant, -127, 127)
+    return astra.run_activation(obs_quant.cpu().numpy())                      
 
 def save_forward_pass(obs):
     obs_quant = torch.round(torch.tensor(obs)*2**e0/m0).to(torch.float32)
@@ -236,7 +186,7 @@ if save_wt_scales_activations:
     np.savetxt(path_scales + "e1.csv", e1.cpu().numpy().reshape(1,),   delimiter=",")
     np.savetxt(path_scales + "e2.csv", e2.cpu().numpy().reshape(1,),   delimiter=",")
     np.savetxt(path_scales + "e3.csv", e3.cpu().numpy().reshape(1,),   delimiter=",")
-    exit()
+    # exit()
 
 env = gym.make('Ant-v5')
 # obs = env.reset()
@@ -257,10 +207,14 @@ for _ in range(10):
     total_reward= 0
     done = False
     while not done and timestep < 1000:
+        # if timestep==0:
+        #     action = forward_pass(obs[0])*Sx3
+        # else:
+        #     action = forward_pass(obs)*Sx3
         if timestep==0:
-            action = forward_pass(obs[0])*Sx3
+            action = forward_pass_astra(obs[0])*Sx3
         else:
-            action = forward_pass(obs)*Sx3
+            action = forward_pass_astra(obs)*Sx3
         
         # action = torch.tanh(action) * torch.tensor(env.action_space.high)
         action = action.cpu().numpy()
@@ -272,7 +226,6 @@ for _ in range(10):
         # else:
         #     action, _ = model.policy.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
-        c = foot_contact_flags(model, data)
         print("rendered")
         obs_req = obs
         # break
