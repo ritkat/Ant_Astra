@@ -16,7 +16,7 @@ import time
 
 RUN_CONTINUOUS = False
 
-astra = AstraInterface("COM3", 115200)
+astra = AstraInterface("/dev/ttyACM0", 115200)
 astra.write_instcfg("instr_mem.bin")
 astra.write_paramcfg("param_mem.bin")
 
