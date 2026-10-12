@@ -146,7 +146,9 @@ def forward_pass_astra(obs):
     obs_quant = signed_to_u8(obs_quant)
     # print("obs_quant: ", u8_to_signed(astra.processor_run(obs_quant, startAddress=0, outputLength=10)[2:]))
     # exit()
-    return u8_to_signed(astra.processor_run(obs_quant, startAddress=232, outputLength=10)[2:])                      
+    data = u8_to_signed(astra.processor_run(obs_quant, startAddress=232, outputLength=10)[2:])
+    print(data)
+    return data                      
 
 env = gym.make('Ant-v5', render_mode="human")
 obs = env.reset(seed=42)
