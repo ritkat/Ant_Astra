@@ -146,7 +146,7 @@ def forward_pass_astra(obs):
     obs_quant = signed_to_u8(obs_quant)
     # print("obs_quant: ", u8_to_signed(astra.processor_run(obs_quant, startAddress=0, outputLength=10)[2:]))
     # exit()
-    data = u8_to_signed(astra.processor_run(obs_quant, startAddress=233, outputLength=64)[2:])
+    data = u8_to_signed(astra.processor_run(obs_quant, startAddress=0, outputLength=1024)[2:])
     print(data)
     return data                      
 
