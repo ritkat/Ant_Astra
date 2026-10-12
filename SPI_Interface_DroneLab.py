@@ -234,7 +234,7 @@ class crazy_processor():
         activation_packet_count = 0
         self._packet_count = 0
         spiData, numPackets = self.packetGenerator(data, "activation")
-        print("Sending Activation Data: ", spiData)
+        # print("Sending Activation Data: ", spiData)
         for packet in spiData:
             #print(packet)
             resp = self._spi.xfer2(packet)  
