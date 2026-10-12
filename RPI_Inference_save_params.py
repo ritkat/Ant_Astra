@@ -17,7 +17,7 @@ RUN_CONTINUOUS = False
 
 astra = crazy_processor(
     instruction_file="/home/krakenrf/Ant_Astra/instr_mem_bin.txt",
-    parameter_file="/home/krakenrf/Ant_Astra/param_mem_bin.txt",
+    parameter_file="/home/krakenrf/Ant_Astra/param_mem_test.txt",
 )
 
 # from Ant_quant import *
@@ -146,7 +146,7 @@ def forward_pass_astra(obs):
     obs_quant = signed_to_u8(obs_quant)
     # print("obs_quant: ", u8_to_signed(astra.processor_run(obs_quant, startAddress=0, outputLength=10)[2:]))
     # exit()
-    data = u8_to_signed(astra.processor_run(obs_quant, startAddress=233, outputLength=1000)[2:])
+    data = u8_to_signed(astra.processor_run(obs_quant, startAddress=0, outputLength=1000)[2:])
     print(data)
     return data                      
 
