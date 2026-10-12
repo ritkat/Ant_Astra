@@ -16,8 +16,8 @@ import time
 RUN_CONTINUOUS = False
 
 astra = crazy_processor(
-    instruction_file="~/Ant_Astra/instr_mem_bin.txt",
-    parameter_file="~/Ant_Astra/param_mem_bin.txt",
+    instruction_file="/home/krakenrf/Ant_Astra/instr_mem_bin.txt",
+    parameter_file="/home/krakenrf/Ant_Astra/param_mem_bin.txt",
 )
 
 # from Ant_quant import *
