@@ -70,7 +70,7 @@ class crazy_processor():
         Takes the string data from the memory file and converts it to integers.
         """
         with open(memoryFile, "r") as f:
-            data = f.read()
+            data = f.read().replace("_", "")
         
         dataList = data.split('\n')
         dataList = list(filter(None, dataList))
