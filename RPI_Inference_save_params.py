@@ -180,7 +180,7 @@ for _ in range(10):
             action = forward_pass_astra(obs)*Sx3
         
         # action = torch.tanh(action) * torch.tensor(env.action_space.high)
-        action = action.cpu().numpy()
+        # action = action.cpu().numpy()
         # action[0], action[1], action[2] = 0, 0, 0
         
         action = np.clip(action, action_space_low, action_space_high)
